@@ -1,8 +1,11 @@
 import numpy as np
 import pandas as pd
-from sklearn.datasets import load_iris
+from sklearn.datasets import load_iris, load_breast_cancer
+from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+
+from sklearn.linear_model import LogisticRegression
 
 
 class LogisticRegressionGD(object):
@@ -44,6 +47,7 @@ class LogisticRegressionGD(object):
         self : object
         """
         rgen = np.random.RandomState(self.random_state)
+        # initalize weights from N~(0,0.01)
         self.w_ = rgen.normal(loc=0.0, scale=0.01, size=1+X.shape[1])
         self.cost_ = []
 
@@ -52,6 +56,7 @@ class LogisticRegressionGD(object):
             output = self.activation(net_input)
             errors = y - output
             self.w_[1:] += self.eta * X.T.dot(errors)
+            # ???
             self.w_[0] += self.eta * errors.sum()
 
             # ??? compute logistic cost now instead of SSE cost
@@ -61,38 +66,42 @@ class LogisticRegressionGD(object):
 
     def net_input(self, X):
         """Calc net input"""
+        # ??? why add 0th term to all others? is it adding bias term to all others?
         return np.dot(X, self.w_[1:] + self.w_[0])
 
     def activation(self, z):
         """Compute logistic sigmoid activation"""
-        # ??? wtf are -250, 250
+        # clip => if value of z_i goes below -250 it becomes -250
+        #                         geos above 250 it becomes 250
         return 1 / (1 + np.exp(-np.clip(z, -250, 250)))
 
     def predict(self, X):
         """Return class label after unit step"""
+        print(self.net_input(X))
+        print(self.net_input(X).shape)
         return np.where(self.net_input(X) >= 0.0, 1, 0)
 
 
-iris = load_iris()
-X = iris.data[:, [2, 3]]
-y = iris.target
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1, stratify=y)
+bc = load_breast_cancer()
+bc_df = pd.DataFrame(data=bc.data, columns=bc.feature_names)
+bc_df["target"] = bc.target
 
-sc = StandardScaler()
-X_train_std = sc.fit_transform(X_train)
-X_test_std = sc.fit_transform(X_test)
 
-X_train_01_subset = X_train_std[(y_train == 0) | (y_train == 1)]
-y_train_01_subset = y_train[(y_train == 0) | (y_train == 1)]
+print("memory size before ", bc_df.memory_usage(deep=True).sum())
+bc_df.iloc[:, :-1] = StandardScaler().fit_transform(bc_df.iloc[:, :-1])
+bc_df.iloc[:, :-1] = bc_df.iloc[:, :-1].astype(np.float16)
+bc_df.iloc[:, -1] = bc_df.iloc[:, -1].astype(np.int8)
+print("memory size after ", bc_df.memory_usage(deep=True).sum())
 
-lrgd = LogisticRegressionGD(eta=0.05, n_iter=1000, random_state=1)
-lrgd.fit(X_train_01_subset,
-         y_train_01_subset)
+X = bc_df.drop(columns=["target"]).values
+y = bc_df["target"].values
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25)
 
-pred_y = lrgd.predict(X_test_std)
+lr_clf = LogisticRegressionGD(eta=0.05, n_iter=1000, random_state=1)
+lr_clf.fit(X_train, y_train)
+y_pred = lr_clf.predict(X_test)
+print(len(y_pred))
+print(y_pred)
 
-print(X_test_std)
-print(pred_y)
-print(y_test)
-
-print(np.sum(np.where(pred_y == y_test, 1, 0)) / len(pred_y))
+test_acc = np.sum(np.where(y_test == y_pred, 1, 0)) / len(y_test)
+print(f"test accuracy = {round(test_acc, 2)}")
